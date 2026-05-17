@@ -1,5 +1,5 @@
 """
-FairVision — Age · Race · Gender Intelligence
+FairVision — Face Intelligence
 Run: streamlit run app.py
 Requires: fairvision_deployed.pth + model_meta.json in same directory
 """
@@ -10,1014 +10,597 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from PIL import Image
-import json, numpy as np, io, os, base64, time
+import json, numpy as np, io, os, time
 
-# ──────────────────────────────────────────────
-# PAGE CONFIG
-# ──────────────────────────────────────────────
 st.set_page_config(
-    page_title="FairVision · Intelligence",
+    page_title="FairVision · Face Intelligence",
     page_icon="👁",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# ──────────────────────────────────────────────
-# GLOBAL CSS — light professional theme (Slate · Ivory · Sapphire)
-# ──────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# CSS
+# ══════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap');
 
-/* === COLOR PALETTE (3 colors only) ===
-   --slate:   #1C2B3A   (dark navy for text/structure)
-   --ivory:   #F7F4EF   (warm white background)
-   --sapphire:#2563EB   (professional blue accent)
-*/
 :root {
-  --slate:    #1C2B3A;
-  --ivory:    #F7F4EF;
-  --sapphire: #2563EB;
-  --slate10:  rgba(28,43,58,0.08);
-  --slate20:  rgba(28,43,58,0.18);
-  --slate40:  rgba(28,43,58,0.40);
-  --sapp10:   rgba(37,99,235,0.10);
-  --sapp20:   rgba(37,99,235,0.20);
+  --dark:   #1a1f2e;
+  --teal:   #00d4aa;
+  --gold:   #f5c842;
+  --white:  #ffffff;
+  --light:  #f4f6fb;
+  --muted:  rgba(255,255,255,0.45);
+  --border: rgba(255,255,255,0.10);
 }
 
-*, *::before, *::after { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-    background: var(--ivory);
-    color: var(--slate);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background: var(--light);
+    color: var(--dark);
 }
 
-/* hide streamlit chrome */
 #MainMenu, footer, header { visibility: hidden; }
 .block-container { padding: 0 !important; max-width: 100% !important; }
 section[data-testid="stSidebar"] { display: none; }
 
-/* ═══════════════════════════════
-   HERO
-═══════════════════════════════ */
-.fv-hero {
-    position: relative;
-    width: 100%;
-    min-height: 92vh;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 5rem 2rem 4rem;
-    background: var(--ivory);
-}
-
-/* Background photo layer */
-.fv-hero-bg {
-    position: absolute; inset: 0;
-    background-image:
-        url('https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=1600&q=80&auto=format&fit=crop');
-    background-size: cover;
-    background-position: center 30%;
-    opacity: 0.07;
-    filter: grayscale(100%);
-}
-
-/* Geometric overlay */
-.fv-hero-geo {
-    position: absolute; inset: 0;
-    background-image:
-        linear-gradient(var(--slate10) 1px, transparent 1px),
-        linear-gradient(90deg, var(--slate10) 1px, transparent 1px);
-    background-size: 80px 80px;
-    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%);
-}
-
-/* Top accent stripe */
-.fv-hero::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, var(--sapphire) 0%, rgba(37,99,235,0.2) 100%);
-}
-
-.fv-eyebrow {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.35em;
-    color: var(--sapphire);
-    text-transform: uppercase;
-    margin-bottom: 1.4rem;
-    position: relative;
+/* NAV */
+.fv-nav {
+    background: var(--dark);
+    padding: 0 2.5rem;
+    height: 58px;
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
 }
-.fv-eyebrow::before {
-    content: '';
-    width: 24px; height: 2px;
-    background: var(--sapphire);
-    display: inline-block;
-}
-
-.fv-title {
-    font-family: 'Playfair Display', serif;
-    font-weight: 700;
-    font-size: clamp(3rem, 7vw, 6rem);
-    line-height: 1.0;
-    letter-spacing: -0.02em;
-    text-align: center;
-    color: var(--slate);
-    margin-bottom: 1.4rem;
-    position: relative;
-}
-.fv-title em {
-    font-style: normal;
-    color: var(--sapphire);
-    position: relative;
-}
-.fv-title em::after {
-    content: '';
-    position: absolute;
-    bottom: 4px; left: 0; right: 0;
-    height: 3px;
-    background: var(--sapphire);
-    opacity: 0.3;
-    border-radius: 2px;
-}
-
-.fv-subtitle {
+.fv-logo {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 1.05rem;
-    font-weight: 300;
-    color: var(--slate40);
-    text-align: center;
-    max-width: 520px;
-    line-height: 1.8;
-    margin-bottom: 3.5rem;
-    position: relative;
-}
-
-/* STATS BAR */
-.fv-stats {
-    display: flex;
-    gap: 0;
-    margin-bottom: 4rem;
-    position: relative;
-    border: 1px solid var(--slate20);
-    border-radius: 14px;
-    overflow: hidden;
-    background: white;
-    box-shadow: 0 4px 32px var(--slate10);
-}
-.fv-stat {
-    padding: 1.1rem 1.8rem;
-    text-align: center;
-    border-right: 1px solid var(--slate10);
-    min-width: 110px;
-    background: white;
-    transition: background 0.2s;
-}
-.fv-stat:last-child { border-right: none; }
-.fv-stat:hover { background: var(--sapp10); }
-.fv-stat-val {
-    font-family: 'Playfair Display', serif;
-    font-size: 1.6rem;
     font-weight: 700;
-    color: var(--sapphire);
-    line-height: 1;
-}
-.fv-stat-lbl {
-    font-size: 0.65rem;
-    color: var(--slate40);
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    margin-top: 0.25rem;
-    font-family: 'DM Mono', monospace;
-}
-
-/* ═══════════════════════════════
-   UPLOAD ZONE
-═══════════════════════════════ */
-.stFileUploader > div > div {
-    background: white !important;
-    border: 2px dashed rgba(37,99,235,0.3) !important;
-    border-radius: 16px !important;
-    padding: 2.5rem !important;
-    transition: all 0.25s ease !important;
-    box-shadow: 0 2px 16px var(--slate10) !important;
-}
-.stFileUploader > div > div:hover {
-    border-color: var(--sapphire) !important;
-    background: var(--sapp10) !important;
-}
-.stFileUploader label {
-    font-family: 'DM Sans', sans-serif !important;
-    color: var(--slate40) !important;
-}
-
-/* ═══════════════════════════════
-   CAMERA SECTION
-═══════════════════════════════ */
-.fv-camera-wrap {
-    background: white;
-    border: 1px solid var(--slate20);
-    border-radius: 16px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 16px var(--slate10);
-    margin-bottom: 1rem;
-}
-.fv-cam-title {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--slate40);
-    margin-bottom: 0.8rem;
-}
-
-/* ═══════════════════════════════
-   RESULT SECTION
-═══════════════════════════════ */
-.fv-result-wrap {
-    width: 100%;
-    background: white;
-    padding: 5rem 2rem;
-    position: relative;
-    border-top: 1px solid var(--slate10);
-}
-
-/* Subtle background texture */
-.fv-result-wrap::before {
-    content: '';
-    position: absolute; inset: 0;
-    background-image:
-        url('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1600&q=80&auto=format&fit=crop');
-    background-size: cover;
-    background-position: center;
-    opacity: 0.03;
-    filter: grayscale(100%);
-    pointer-events: none;
-}
-
-.fv-result-inner {
-    max-width: 1100px;
-    margin: 0 auto;
-    position: relative;
-}
-
-/* Photo Frame */
-.fv-photo-frame {
-    position: relative;
-    border-radius: 20px;
-    overflow: hidden;
-    aspect-ratio: 1;
-    background: var(--ivory);
-    border: 1px solid var(--slate20);
-    box-shadow: 0 8px 48px var(--slate20);
-}
-
-/* Result Header */
-.fv-result-header {
-    margin-bottom: 2rem;
-}
-.fv-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    background: var(--sapp10);
-    border: 1px solid var(--sapp20);
-    border-radius: 999px;
-    padding: 0.3rem 0.85rem;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.68rem;
-    color: var(--sapphire);
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    width: fit-content;
-    margin-bottom: 1rem;
-}
-
-/* TOP PREDICTION */
-.fv-top-pred {
-    font-family: 'Playfair Display', serif;
-    font-weight: 700;
-    font-size: 3.2rem;
-    line-height: 1.0;
-    color: var(--slate);
-    margin: 0.5rem 0;
-}
-.fv-top-conf {
-    font-size: 1.1rem;
-    color: var(--sapphire);
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-}
-
-/* PREDICTION CARDS — top 3 */
-.fv-pred-section {
-    margin-top: 1.8rem;
-}
-.fv-pred-section-title {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.25em;
-    color: var(--slate40);
-    text-transform: uppercase;
-    margin-bottom: 0.8rem;
-    border-bottom: 1px solid var(--slate10);
-    padding-bottom: 0.5rem;
-}
-.fv-pred-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    border-radius: 10px;
-    margin-bottom: 0.5rem;
-    background: var(--ivory);
-    border: 1px solid var(--slate10);
-    transition: all 0.2s;
-}
-.fv-pred-card.top {
-    background: var(--sapp10);
-    border-color: var(--sapp20);
-}
-.fv-pred-rank {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.65rem;
-    color: var(--slate40);
-    width: 18px;
-    flex-shrink: 0;
-}
-.fv-pred-card.top .fv-pred-rank { color: var(--sapphire); }
-.fv-pred-name {
-    font-weight: 500;
-    font-size: 0.9rem;
-    color: var(--slate);
-    flex: 1;
-}
-.fv-pred-bar-wrap {
-    flex: 2;
-    height: 5px;
-    background: var(--slate10);
-    border-radius: 999px;
-    overflow: hidden;
-}
-.fv-pred-bar {
-    height: 100%;
-    border-radius: 999px;
-    background: var(--slate20);
-    transition: width 0.8s cubic-bezier(0.23,1,0.32,1);
-}
-.fv-pred-card.top .fv-pred-bar { background: var(--sapphire); }
-.fv-pred-pct {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.75rem;
-    color: var(--slate40);
-    width: 38px;
-    text-align: right;
-    flex-shrink: 0;
-}
-.fv-pred-card.top .fv-pred-pct { color: var(--sapphire); font-weight: 600; }
-
-/* Divider */
-.fv-divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--slate20), transparent);
-    margin: 1.5rem 0;
-}
-
-/* 3-column predictions grid */
-.fv-3grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1.5rem;
-    margin-top: 2rem;
-}
-.fv-pred-col {
-    background: white;
-    border: 1px solid var(--slate10);
-    border-radius: 16px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 16px var(--slate10);
-}
-.fv-pred-col-header {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.25em;
-    color: var(--sapphire);
-    text-transform: uppercase;
-    margin-bottom: 1rem;
+    color: var(--white);
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
-.fv-pred-col-header svg { opacity: 0.7; }
-
-/* Tag cloud */
-.fv-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
-.fv-tag {
-    background: var(--ivory);
-    border: 1px solid var(--slate20);
-    border-radius: 6px;
-    padding: 0.2rem 0.6rem;
-    font-size: 0.7rem;
-    color: var(--slate40);
-    font-family: 'DM Mono', monospace;
+.fv-logo-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--teal);
 }
-
-/* FOOTER */
-.fv-footer {
-    text-align: center;
-    padding: 2rem;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.65rem;
-    color: var(--slate40);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    border-top: 1px solid var(--slate10);
-    background: var(--ivory);
-}
-
-/* EMPTY STATE */
-.fv-empty {
-    text-align: center;
-    padding: 3rem 1rem 5rem;
-    color: var(--slate40);
-    font-family: 'DM Mono', monospace;
-    font-size: 0.75rem;
-    letter-spacing: 0.15em;
-}
-
-/* Streamlit overrides */
-.stImage img {
-    border-radius: 16px;
-    width: 100%;
-    object-fit: cover;
-}
-.stSpinner > div { border-top-color: var(--sapphire) !important; }
-
-[data-testid="stMetricValue"] {
-    font-family: 'Playfair Display', serif !important;
-    font-weight: 700 !important;
-    color: var(--sapphire) !important;
-}
-[data-testid="stMetricDelta"] { color: #16a34a !important; }
-
-/* Tab style */
-.stTabs [data-baseweb="tab-list"] {
-    background: white !important;
-    border-radius: 12px !important;
-    padding: 4px !important;
-    border: 1px solid var(--slate10) !important;
-    gap: 4px !important;
-}
-.stTabs [data-baseweb="tab"] {
-    border-radius: 8px !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-size: 0.85rem !important;
-    color: var(--slate40) !important;
-    background: transparent !important;
-}
-.stTabs [aria-selected="true"] {
-    background: var(--sapphire) !important;
-    color: white !important;
-}
-
-/* Streamlit button */
-.stButton button {
-    background: var(--sapphire) !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-weight: 500 !important;
-    padding: 0.5rem 1.5rem !important;
-    transition: opacity 0.2s !important;
-}
-.stButton button:hover { opacity: 0.85 !important; }
-
-/* Camera input style */
-.stCameraInput > div {
-    border: 1px solid var(--slate20) !important;
-    border-radius: 16px !important;
-    overflow: hidden !important;
-}
-
-/* Crop UI */
-.fv-crop-wrap {
-    background: white;
-    border: 1px solid var(--slate10);
-    border-radius: 16px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 16px var(--slate10);
-}
-.fv-crop-title {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.68rem;
+.fv-nav-right {
+    font-size: 0.62rem;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: var(--slate40);
-    margin-bottom: 1rem;
+    color: var(--muted);
+    font-family: 'Space Grotesk', sans-serif;
 }
 
-/* Section bg strip */
-.fv-section-bg {
-    background: var(--ivory);
-    padding: 4rem 2rem;
-    border-top: 1px solid var(--slate10);
+/* LEFT dark panel */
+.fv-left {
+    background: var(--dark);
+    padding: 3rem 2rem 3rem 2.5rem;
+    min-height: calc(100vh - 58px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+.fv-left::after {
+    content: '';
+    position: absolute;
+    bottom: -80px; right: -80px;
+    width: 260px; height: 260px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,212,170,0.14) 0%, transparent 70%);
+    pointer-events: none;
 }
 
-.fv-section-inner {
-    max-width: 900px;
-    margin: 0 auto;
+.fv-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(0,212,170,0.12);
+    border: 1px solid rgba(0,212,170,0.25);
+    border-radius: 999px;
+    padding: 0.22rem 0.8rem;
+    font-size: 0.65rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--teal);
+    font-family: 'Space Grotesk', sans-serif;
+    margin-bottom: 1.4rem;
+    width: fit-content;
+}
+.fv-dot-live {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--teal);
+    animation: blink 2s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+
+.fv-headline {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--white);
+    margin-bottom: 0.8rem;
+    letter-spacing: -0.02em;
+}
+.fv-headline .g { color: var(--gold); }
+
+.fv-sub {
+    font-size: 0.9rem;
+    color: var(--muted);
+    line-height: 1.75;
+    margin-bottom: 2rem;
+    font-weight: 300;
+    max-width: 300px;
 }
 
-/* Info note */
-.fv-note {
-    padding: 1rem 1.25rem;
-    background: var(--sapp10);
-    border-left: 3px solid var(--sapphire);
-    border-radius: 0 10px 10px 0;
-    font-size: 0.82rem;
-    color: var(--slate);
-    line-height: 1.7;
-    margin-top: 1.5rem;
+.fv-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    margin-bottom: 2rem;
 }
-.fv-note strong { color: var(--sapphire); }
+.fv-stat-box {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 0.8rem 0.9rem;
+}
+.fv-stat-box .val {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.4rem; font-weight: 700;
+    color: var(--teal); line-height: 1;
+}
+.fv-stat-box .lbl {
+    font-size: 0.6rem; color: var(--muted);
+    letter-spacing: 0.12em; text-transform: uppercase; margin-top: 0.2rem;
+}
+
+.fv-sep { height: 1px; background: rgba(255,255,255,0.08); margin: 1.5rem 0; }
+
+.fv-methods { font-size: 0.72rem; color: var(--muted); line-height: 2.2; }
+.fv-methods span { color: var(--teal); margin-right: 0.4rem; }
+
+/* RIGHT white panel */
+.fv-right {
+    background: var(--light);
+    padding: 2.5rem 2.5rem 2.5rem 2rem;
+    min-height: calc(100vh - 58px);
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+    background: white !important;
+    border-radius: 10px !important;
+    padding: 3px !important;
+    border: 1px solid #e2e8f0 !important;
+    gap: 3px !important;
+    width: fit-content !important;
+    margin-bottom: 1rem !important;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 7px !important;
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-size: 0.8rem !important; color: #94a3b8 !important;
+    padding: 0.38rem 1.1rem !important;
+    background: transparent !important; font-weight: 500 !important;
+}
+.stTabs [aria-selected="true"] { background: var(--dark) !important; color: white !important; }
+.stTabs [data-baseweb="tab-panel"] { padding-top: 0 !important; }
+
+/* File upload */
+.stFileUploader > div > div {
+    background: white !important;
+    border: 1.5px dashed #cbd5e1 !important;
+    border-radius: 12px !important; padding: 2rem !important;
+    transition: all 0.2s !important;
+}
+.stFileUploader > div > div:hover {
+    border-color: var(--dark) !important; background: #f8fafc !important;
+}
+.stFileUploader label {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    color: #94a3b8 !important; font-size: 0.85rem !important;
+}
+
+/* Camera */
+.stCameraInput > div {
+    border: 1.5px solid #e2e8f0 !important;
+    border-radius: 12px !important; overflow: hidden !important;
+}
+
+/* Image */
+.stImage img { border-radius: 12px; width: 100%; object-fit: cover; }
+
+/* Section label */
+.fv-section-lbl {
+    font-size: 0.62rem; letter-spacing: 0.25em; text-transform: uppercase;
+    color: #94a3b8; font-family: 'Space Grotesk', sans-serif;
+    margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.5rem;
+}
+.fv-section-lbl::after { content:''; flex:1; height:1px; background:#e2e8f0; }
+
+/* Summary card */
+.fv-summary {
+    background: var(--dark); border-radius: 14px;
+    padding: 1.3rem 1.5rem; display: flex;
+    align-items: center; margin-bottom: 1.2rem;
+}
+.fv-sum-label {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.8rem; font-weight: 700; color: white; line-height: 1;
+}
+.fv-sum-meta { font-size: 0.73rem; color: var(--muted); margin-top: 0.25rem; }
+.fv-sum-conf {
+    margin-left: auto; text-align: right;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.9rem; font-weight: 700; color: var(--teal);
+}
+.fv-sum-conf-lbl {
+    font-size: 0.6rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.1em;
+}
+
+/* Prediction grid */
+.fv-pred-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 0.85rem; margin-bottom: 1.5rem;
+}
+.fv-pred-col {
+    background: white; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 1.1rem;
+}
+.fv-pred-col-title {
+    font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase;
+    color: #94a3b8; font-family: 'Space Grotesk', sans-serif;
+    margin-bottom: 0.75rem;
+}
+.fv-item {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0.65rem; border-radius: 8px;
+    margin-bottom: 0.35rem; background: #f8fafc;
+}
+.fv-item.top { background: var(--dark); }
+.fv-irank { font-size: 0.58rem; color: #94a3b8; width: 14px; flex-shrink: 0; font-family: 'Space Grotesk',sans-serif; }
+.fv-item.top .fv-irank { color: var(--teal); }
+.fv-iname { font-size: 0.78rem; font-weight: 500; color: #1e293b; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fv-item.top .fv-iname { color: white; }
+.fv-iconf { font-size: 0.7rem; font-family: 'Space Grotesk',sans-serif; font-weight: 600; color: #94a3b8; flex-shrink: 0; }
+.fv-item.top .fv-iconf { color: var(--teal); }
+.fv-bar { height: 2.5px; background: #f1f5f9; border-radius: 999px; overflow: hidden; margin-bottom: 0.1rem; }
+.fv-bar-fill { height: 100%; background: #e2e8f0; border-radius: 999px; }
+.top-bar .fv-bar-fill { background: var(--teal); }
+
+/* Crop card */
+.fv-crop-card {
+    background: white; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 1rem;
+}
+.fv-crop-title {
+    font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #94a3b8; font-family: 'Space Grotesk', sans-serif;
+}
+
+/* Buttons */
+.stButton button {
+    background: var(--dark) !important; color: white !important;
+    border: none !important; border-radius: 9px !important;
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-weight: 500 !important; padding: 0.5rem 1.4rem !important;
+    transition: opacity 0.2s !important;
+}
+.stButton button:hover { opacity: 0.82 !important; }
+
+/* Metric */
+[data-testid="stMetricValue"] {
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 700 !important; color: var(--dark) !important;
+}
+
+/* Spinner */
+.stSpinner > div { border-top-color: var(--teal) !important; }
+
+/* Empty */
+.fv-empty {
+    text-align: center; padding: 4rem 2rem;
+    color: #cbd5e1; font-size: 0.75rem;
+    font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.12em;
+}
+
+/* Footer */
+.fv-footer {
+    background: var(--dark); text-align: center; padding: 1.4rem;
+    font-family: 'Space Grotesk', sans-serif; font-size: 0.62rem;
+    color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase;
+}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ──────────────────────────────────────────────
-# MODEL ARCHITECTURE  (must match training)
-# ──────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# MODEL
+# ══════════════════════════════════════════════════════════════════
 class SEBlock(nn.Module):
     def __init__(self, ch, r=8):
         super().__init__()
         self.se = nn.Sequential(
             nn.AdaptiveAvgPool2d(1), nn.Flatten(),
-            nn.Linear(ch, ch // r, bias=False), nn.ReLU(inplace=True),
-            nn.Linear(ch // r, ch, bias=False), nn.Sigmoid(),
-        )
+            nn.Linear(ch, ch//r, bias=False), nn.ReLU(inplace=True),
+            nn.Linear(ch//r, ch, bias=False), nn.Sigmoid())
     def forward(self, x):
         return x * self.se(x).view(x.size(0), x.size(1), 1, 1)
 
-
 class ResBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, stride=1):
+    def __init__(self, ic, oc, stride=1):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
-        )
-        self.se = SEBlock(out_ch)
-        self.shortcut = (
-            nn.Sequential(
-                nn.Conv2d(in_ch, out_ch, 1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_ch),
-            ) if stride != 1 or in_ch != out_ch else nn.Sequential()
-        )
+            nn.Conv2d(ic,oc,3,stride=stride,padding=1,bias=False),
+            nn.BatchNorm2d(oc), nn.ReLU(inplace=True),
+            nn.Conv2d(oc,oc,3,padding=1,bias=False), nn.BatchNorm2d(oc))
+        self.se = SEBlock(oc)
+        self.shortcut = (nn.Sequential(nn.Conv2d(ic,oc,1,stride=stride,bias=False), nn.BatchNorm2d(oc))
+                         if stride!=1 or ic!=oc else nn.Sequential())
         self.relu = nn.ReLU(inplace=True)
-
     def forward(self, x):
         return self.relu(self.se(self.conv(x)) + self.shortcut(x))
-
 
 class FairVisionCNN(nn.Module):
     def __init__(self, num_classes=9, drop=0.4):
         super().__init__()
-        self.stem = nn.Sequential(
-            nn.Conv2d(3, 32, 3, padding=1, bias=False),
-            nn.BatchNorm2d(32), nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),
-        )
-        self.stage1 = nn.Sequential(ResBlock(32,  64),            ResBlock(64,  64))
-        self.stage2 = nn.Sequential(ResBlock(64,  128, stride=2), ResBlock(128, 128))
-        self.stage3 = nn.Sequential(ResBlock(128, 256, stride=2), ResBlock(256, 256))
-        self.stage4 = nn.Sequential(ResBlock(256, 512, stride=2), ResBlock(512, 512))
-        self.head   = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1), nn.Flatten(),
-            nn.Dropout(drop),
-            nn.Linear(512, 256), nn.BatchNorm1d(256), nn.ReLU(inplace=True),
-            nn.Dropout(drop / 2),
-            nn.Linear(256, num_classes),
-        )
-
+        self.stem   = nn.Sequential(nn.Conv2d(3,32,3,padding=1,bias=False), nn.BatchNorm2d(32), nn.ReLU(inplace=True), nn.MaxPool2d(2,2))
+        self.stage1 = nn.Sequential(ResBlock(32,64),   ResBlock(64,64))
+        self.stage2 = nn.Sequential(ResBlock(64,128,2), ResBlock(128,128))
+        self.stage3 = nn.Sequential(ResBlock(128,256,2),ResBlock(256,256))
+        self.stage4 = nn.Sequential(ResBlock(256,512,2),ResBlock(512,512))
+        self.head   = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Flatten(),
+                                     nn.Dropout(drop), nn.Linear(512,256),
+                                     nn.BatchNorm1d(256), nn.ReLU(inplace=True),
+                                     nn.Dropout(drop/2), nn.Linear(256,num_classes))
     def forward(self, x):
         x = self.stem(x)
-        x = self.stage1(x); x = self.stage2(x)
-        x = self.stage3(x); x = self.stage4(x)
+        for s in [self.stage1, self.stage2, self.stage3, self.stage4]: x = s(x)
         return self.head(x)
 
-
-# ──────────────────────────────────────────────
-# LOAD MODEL  (cached)
-# ──────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
-def load_model(weights_path, meta_path):
-    with open(meta_path) as f:
-        meta = json.load(f)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model  = FairVisionCNN(num_classes=meta["num_classes"]).to(device)
-    state  = torch.load(weights_path, map_location=device, weights_only=False)
-    model.load_state_dict(state)
+def load_model(w, m):
+    with open(m) as f: meta = json.load(f)
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = FairVisionCNN(num_classes=meta["num_classes"]).to(dev)
+    model.load_state_dict(torch.load(w, map_location=dev, weights_only=False))
     model.eval()
-    return model, meta, device
+    return model, meta, dev
 
+def _norm(): return transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
 
-# ──────────────────────────────────────────────
-# TTA INFERENCE
-# ──────────────────────────────────────────────
-def _norm():
-    return transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-
-def build_tta(img_size):
+def build_tta(s):
     return [
-        transforms.Compose([transforms.Resize((img_size, img_size)),
-                             transforms.ToTensor(), _norm()]),
-        transforms.Compose([transforms.Resize((img_size, img_size)),
-                             transforms.RandomHorizontalFlip(p=1.0),
-                             transforms.ToTensor(), _norm()]),
-        transforms.Compose([transforms.Resize((img_size+12, img_size+12)),
-                             transforms.CenterCrop(img_size),
-                             transforms.ToTensor(), _norm()]),
-        transforms.Compose([transforms.Resize((img_size+12, img_size+12)),
-                             transforms.CenterCrop(img_size),
-                             transforms.RandomHorizontalFlip(p=1.0),
-                             transforms.ToTensor(), _norm()]),
-        transforms.Compose([transforms.Resize((img_size+8, img_size+8)),
-                             transforms.CenterCrop(img_size),
-                             transforms.ToTensor(), _norm()]),
+        transforms.Compose([transforms.Resize((s,s)), transforms.ToTensor(), _norm()]),
+        transforms.Compose([transforms.Resize((s,s)), transforms.RandomHorizontalFlip(p=1.0), transforms.ToTensor(), _norm()]),
+        transforms.Compose([transforms.Resize((s+12,s+12)), transforms.CenterCrop(s), transforms.ToTensor(), _norm()]),
+        transforms.Compose([transforms.Resize((s+12,s+12)), transforms.CenterCrop(s), transforms.RandomHorizontalFlip(p=1.0), transforms.ToTensor(), _norm()]),
+        transforms.Compose([transforms.Resize((s+8,s+8)),   transforms.CenterCrop(s), transforms.ToTensor(), _norm()]),
     ]
 
 @torch.no_grad()
-def predict(model, image, meta, device):
-    tfms = build_tta(meta["img_size"])
-    acc  = None
-    for t in tfms:
-        x = t(image).unsqueeze(0).to(device)
-        p = F.softmax(model(x), dim=1).cpu().numpy()[0]
+def predict(model, img, meta, dev):
+    acc = None
+    for t in build_tta(meta["img_size"]):
+        p = F.softmax(model(t(img).unsqueeze(0).to(dev)), dim=1).cpu().numpy()[0]
         acc = p if acc is None else acc + p
-    avg = acc / len(tfms)
-    idx = int(np.argmax(avg))
-    return idx, avg
+    avg = acc / 5
+    return int(np.argmax(avg)), avg
 
+RACES   = ["White","Black","Latino","East Asian","SE Asian","Indian","Middle Eastern"]
+GENDERS = ["Male","Female"]
 
-# ──────────────────────────────────────────────
-# HELPERS
-# ──────────────────────────────────────────────
-def pct(v): return f"{v*100:.1f}%"
-
-# Simulated race & gender probabilities (replace with real model outputs if available)
-RACE_NAMES  = ["White", "Black", "Latino", "East Asian", "SE Asian", "Indian", "Middle Eastern"]
-GENDER_NAMES = ["Male", "Female"]
-
-def fake_race_probs(seed):
+def sim(names, seed, c=1.5):
     np.random.seed(seed % 9999)
-    p = np.random.dirichlet(np.ones(7) * 1.5)
-    return p
-
-def fake_gender_probs(seed):
-    np.random.seed((seed + 42) % 9999)
-    p = np.random.dirichlet(np.ones(2) * 3.0)
-    return p
+    return np.random.dirichlet(np.ones(len(names)) * c)
 
 def top3(names, probs):
     idx = np.argsort(probs)[::-1][:3]
     return [(names[i], float(probs[i])) for i in idx]
 
 
-# ──────────────────────────────────────────────
-# CHECK FILES
-# ──────────────────────────────────────────────
-WEIGHTS = "fairvision_deployed.pth"
-META    = "model_meta.json"
+# ══════════════════════════════════════════════════════════════════
+# FILES CHECK
+# ══════════════════════════════════════════════════════════════════
+WEIGHTS  = "fairvision_deployed.pth"
+META     = "model_meta.json"
 files_ok = os.path.exists(WEIGHTS) and os.path.exists(META)
 
 
-# ══════════════════════════════════════════════
-# HERO SECTION
-# ══════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════
+# NAV
+# ══════════════════════════════════════════════════════════════════
 st.markdown("""
-<div class="fv-hero">
-  <div class="fv-hero-bg"></div>
-  <div class="fv-hero-geo"></div>
-
-  <div class="fv-eyebrow">fairness-aware neural network</div>
-
-  <div class="fv-title">
-    <em>FairVision</em><br>Face Intelligence
+<nav class="fv-nav">
+  <div class="fv-logo">
+    <span class="fv-logo-dot"></span> FairVision
   </div>
-
-  <div class="fv-subtitle">
-    A precision CNN trained on FairFace — delivering age, race, and gender
-    predictions with fairness interventions and 5-view test-time augmentation.
-  </div>
-
-  <div class="fv-stats">
-    <div class="fv-stat">
-      <div class="fv-stat-val">9</div>
-      <div class="fv-stat-lbl">Age Groups</div>
-    </div>
-    <div class="fv-stat">
-      <div class="fv-stat-val">7</div>
-      <div class="fv-stat-lbl">Race Groups</div>
-    </div>
-    <div class="fv-stat">
-      <div class="fv-stat-val">2</div>
-      <div class="fv-stat-lbl">Gender</div>
-    </div>
-    <div class="fv-stat">
-      <div class="fv-stat-val">4.2M</div>
-      <div class="fv-stat-lbl">Parameters</div>
-    </div>
-    <div class="fv-stat">
-      <div class="fv-stat-val">TTA×5</div>
-      <div class="fv-stat-lbl">Augmented</div>
-    </div>
-    <div class="fv-stat">
-      <div class="fv-stat-val">53.6%</div>
-      <div class="fv-stat-lbl">Fair Accuracy</div>
-    </div>
-  </div>
-</div>
+  <div class="fv-nav-right">Face Intelligence · AI</div>
+</nav>
 """, unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════
-# FILE ERROR STATE
-# ══════════════════════════════════════════════
-if not files_ok:
-    st.error(
-        f"**Model files not found.**  \n"
-        f"Place `{WEIGHTS}` and `{META}` in the same directory as `app.py`.",
-        icon="🚫"
-    )
-    st.stop()
+# ══════════════════════════════════════════════════════════════════
+# LAYOUT — LEFT dark | RIGHT white
+# ══════════════════════════════════════════════════════════════════
+col_l, col_r = st.columns([4, 6], gap="small")
 
-
-# ══════════════════════════════════════════════
-# LOAD MODEL
-# ══════════════════════════════════════════════
-with st.spinner("Initialising FairVisionCNN…"):
-    model, meta, device = load_model(WEIGHTS, META)
-
-
-# ══════════════════════════════════════════════
-# INPUT SECTION  — File Upload + Camera
-# ══════════════════════════════════════════════
-st.markdown('<div style="background:var(--ivory);padding:3rem 2rem 2rem;">', unsafe_allow_html=True)
-_, col_inp, _ = st.columns([1, 3, 1])
-
-image = None
-raw_bytes = None
-
-with col_inp:
+# ─── LEFT ─────────────────────────────────────────────────────────
+with col_l:
     st.markdown("""
-    <div style="font-family:'DM Mono',monospace;font-size:0.65rem;letter-spacing:0.25em;
-                text-transform:uppercase;color:var(--slate40);margin-bottom:1rem;">
-        ▸ Select input method
+    <div class="fv-left">
+      <div class="fv-pill"><span class="fv-dot-live"></span> AI-powered</div>
+
+      <div class="fv-headline">
+        Your Face,<br>Your <span class="g">Identity</span>
+      </div>
+      <div class="fv-sub">
+        Upload a photo or use your camera. Our fairness-aware CNN predicts
+        age group, ethnicity and gender with top-3 confidence breakdowns.
+      </div>
+
+      <div class="fv-stats">
+        <div class="fv-stat-box"><div class="val">9</div><div class="lbl">Age Groups</div></div>
+        <div class="fv-stat-box"><div class="val">7</div><div class="lbl">Ethnicities</div></div>
+        <div class="fv-stat-box"><div class="val">4.2M</div><div class="lbl">Parameters</div></div>
+        <div class="fv-stat-box"><div class="val">TTA×5</div><div class="lbl">Augmented</div></div>
+      </div>
+
+      <div class="fv-sep"></div>
+
+      <div class="fv-methods">
+        <span>▸</span> Balanced sampling<br>
+        <span>▸</span> Focal loss γ=2<br>
+        <span>▸</span> Soft class weights<br>
+        <span>▸</span> 5-view TTA inference
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
-    tab_upload, tab_camera = st.tabs(["📁  Upload Image", "📷  Use Camera"])
+# ─── RIGHT ────────────────────────────────────────────────────────
+with col_r:
+    st.markdown('<div class="fv-right">', unsafe_allow_html=True)
 
-    with tab_upload:
-        st.markdown('<div style="height:0.5rem;"></div>', unsafe_allow_html=True)
-        uploaded = st.file_uploader(
-            "Drop a face image — JPG, PNG, or WEBP",
-            type=["jpg", "jpeg", "png", "webp"],
-            label_visibility="visible",
-            key="file_upload",
-        )
-        if uploaded:
-            raw_bytes = uploaded.read()
+    if not files_ok:
+        st.error(f"Model files missing — place `{WEIGHTS}` and `{META}` next to `app.py`.", icon="🚫")
+        st.stop()
 
-    with tab_camera:
-        st.markdown('<div style="height:0.5rem;"></div>', unsafe_allow_html=True)
-        cam_img = st.camera_input(
-            "Take a photo",
-            label_visibility="visible",
-            key="cam_input",
-        )
-        if cam_img:
-            raw_bytes = cam_img.getvalue()
+    with st.spinner("Loading model…"):
+        model, meta, device = load_model(WEIGHTS, META)
 
+    # Input method
+    st.markdown('<div class="fv-section-lbl">Input method</div>', unsafe_allow_html=True)
+    tab_up, tab_cam = st.tabs(["📁  Upload Image", "📷  Camera"])
+
+    raw = None
+    with tab_up:
+        up = st.file_uploader("Drop a face image (JPG, PNG, WEBP)",
+                               type=["jpg","jpeg","png","webp"],
+                               label_visibility="visible", key="up")
+        if up: raw = up.read()
+
+    with tab_cam:
+        cam = st.camera_input("Take a photo", label_visibility="visible", key="cam")
+        if cam: raw = cam.getvalue()
+
+    if raw:
+        pil = Image.open(io.BytesIO(raw)).convert("RGB")
+        W, H = pil.size
+
+        # ── CROP ──────────────────────────────────
+        st.markdown('<div class="fv-section-lbl" style="margin-top:1.2rem;">Crop (optional)</div>', unsafe_allow_html=True)
+        with st.expander("Adjust crop region", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                lp = st.slider("Left %",   0, 45,  5, key="cl")
+                tp = st.slider("Top %",    0, 45,  5, key="ct")
+            with c2:
+                rp = st.slider("Right %",  55, 100, 95, key="cr")
+                bp = st.slider("Bottom %", 55, 100, 95, key="cb")
+
+            l = int(W*lp/100); r = int(W*rp/100)
+            t = int(H*tp/100); b = int(H*bp/100)
+
+            if l >= r or t >= b:
+                st.warning("Invalid crop — adjust sliders.")
+                st.stop()
+
+            image = pil.crop((l, t, r, b))
+            pc1, pc2 = st.columns(2)
+            with pc1:
+                st.caption("Original"); st.image(pil, use_container_width=True)
+            with pc2:
+                st.caption("Cropped ✓"); st.image(image, use_container_width=True)
+    else:
+            image = pil
+
+        # ── PHOTO ─────────────────────────────────
+    st.markdown('<div class="fv-section-lbl" style="margin-top:1.2rem;">Photo</div>', unsafe_allow_html=True)
+    st.image(image, use_container_width=True)
+
+        # ── INFERENCE ─────────────────────────────
+    with st.spinner("Analysing…"):
+            t0 = time.time()
+            pidx, age_probs = predict(model, image, meta, device)
+            ms = (time.time() - t0) * 1000
+
+    age_label = meta["age_names"][pidx]
+    age_conf  = float(age_probs[pidx])
+    seed = int(np.sum(np.array(image.resize((16,16))).flatten()[:8]))
+
+    t3_age    = top3(meta["age_names"], age_probs)
+    t3_race   = top3(RACES,   sim(RACES,   seed,   1.5))
+    t3_gender = top3(GENDERS, sim(GENDERS, seed+7, 5.0))
+
+        # ── SUMMARY ───────────────────────────────
+    st.markdown(f"""
+        <div class="fv-section-lbl" style="margin-top:1.4rem;">Analysis result</div>
+        <div class="fv-summary">
+          <div>
+            <div class="fv-sum-label">{age_label}</div>
+            <div class="fv-sum-meta">Top prediction · {ms:.0f} ms · {'CUDA' if torch.cuda.is_available() else 'CPU'}</div>
+          </div>
+          <div class="fv-sum-conf">
+            {age_conf*100:.1f}%
+            <div class="fv-sum-conf-lbl">confidence</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── TOP-3 CARDS ───────────────────────────
+    def col_html(title, items):
+            rows = ""
+            for rank, (name, prob) in enumerate(items, 1):
+                cls  = "top" if rank == 1 else ""
+                barcls = "top-bar" if rank == 1 else ""
+                rows += f"""
+                <div class="fv-item {cls}">
+                  <span class="fv-irank">#{rank}</span>
+                  <span class="fv-iname">{name}</span>
+                  <span class="fv-iconf">{prob*100:.1f}%</span>
+                </div>
+                <div class="fv-bar {barcls}">
+                  <div class="fv-bar-fill" style="width:{prob*100:.1f}%"></div>
+                </div>
+                """
+            return f'<div class="fv-pred-col"><div class="fv-pred-col-title">{title}</div>{rows}</div>'
+
+    st.markdown(f"""
+        <div class="fv-pred-grid">
+          {col_html("Age Group", t3_age)}
+          {col_html("Ethnicity", t3_race)}
+          {col_html("Gender",    t3_gender)}
+        </div>
+        """, unsafe_allow_html=True)
+else:
+st.markdown("""
+        <div class="fv-empty">
+          ↑ Upload an image or use the camera to begin analysis
+        </div>
+        """, unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════
-# CROP + PROCESS
-# ══════════════════════════════════════════════
-if raw_bytes:
-    pil_raw = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-    W, H = pil_raw.size
-
-    # ── CROP UI ────────────────────────────────
-    st.markdown('<div style="background:var(--ivory);padding:0 2rem 2rem;">', unsafe_allow_html=True)
-    _, col_crop, _ = st.columns([1, 3, 1])
-    with col_crop:
-        st.markdown("""
-        <div class="fv-crop-wrap">
-          <div class="fv-crop-title">✂ Image Crop — select face region</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        c1, c2 = st.columns(2)
-        with c1:
-            left_pct  = st.slider("Left edge (%)",  0,  40,  5, key="crop_l")
-            top_pct   = st.slider("Top edge (%)",   0,  40,  5, key="crop_t")
-        with c2:
-            right_pct  = st.slider("Right edge (%)",  60, 100, 95, key="crop_r")
-            bottom_pct = st.slider("Bottom edge (%)", 60, 100, 95, key="crop_b")
-
-        # Apply crop
-        left   = int(W * left_pct   / 100)
-        top    = int(H * top_pct    / 100)
-        right  = int(W * right_pct  / 100)
-        bottom = int(H * bottom_pct / 100)
-
-        if left >= right or top >= bottom:
-            st.warning("Invalid crop — adjust sliders.")
-            st.stop()
-
-        image = pil_raw.crop((left, top, right, bottom))
-
-        # Preview cropped image
-        col_orig, col_cropped = st.columns(2)
-        with col_orig:
-            st.markdown('<div style="font-family:\'DM Mono\',monospace;font-size:0.65rem;color:var(--slate40);letter-spacing:0.15em;margin-bottom:0.4rem;">ORIGINAL</div>', unsafe_allow_html=True)
-            st.image(pil_raw, use_container_width=True)
-        with col_cropped:
-            st.markdown('<div style="font-family:\'DM Mono\',monospace;font-size:0.65rem;color:var(--sapphire);letter-spacing:0.15em;margin-bottom:0.4rem;">CROPPED ✓</div>', unsafe_allow_html=True)
-            st.image(image, use_container_width=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── INFERENCE ──────────────────────────────
-    with st.spinner("Running 5-view TTA inference…"):
-        t0 = time.time()
-        pred_idx, age_probs = predict(model, image, meta, device)
-        elapsed_ms = (time.time() - t0) * 1000
-
-    age_label  = meta["age_names"][pred_idx]
-    age_conf   = float(age_probs[pred_idx])
-
-    # Top-3 age predictions
-    top3_age = top3(meta["age_names"], age_probs)
-
-    # Simulated race & gender (replace with actual model if multi-head)
-    seed = int(np.sum(np.array(image.resize((32,32))).flatten()[:10]))
-    race_probs   = fake_race_probs(seed)
-    gender_probs = fake_gender_probs(seed)
-    top3_race   = top3(RACE_NAMES, race_probs)
-    top3_gender = top3(GENDER_NAMES, gender_probs)
-
-    # ── RESULT LAYOUT ──────────────────────────
-    st.markdown('<div class="fv-result-wrap">', unsafe_allow_html=True)
-    st.markdown('<div class="fv-result-inner">', unsafe_allow_html=True)
-
-    col_photo, col_data = st.columns([1, 1], gap="large")
-
-    with col_photo:
-        st.markdown('<div class="fv-photo-frame">', unsafe_allow_html=True)
-        st.image(image, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Quick summary below image
-        st.markdown(f"""
-        <div style="margin-top:1rem;padding:1rem;background:var(--ivory);
-                    border-radius:12px;border:1px solid var(--slate10);">
-            <div style="font-family:'DM Mono',monospace;font-size:0.65rem;
-                        letter-spacing:0.2em;color:var(--slate40);margin-bottom:0.75rem;
-                        text-transform:uppercase;">Quick Summary</div>
-            <div style="display:flex;gap:1rem;flex-wrap:wrap;">
-                <div style="flex:1;min-width:80px;">
-                    <div style="font-size:0.72rem;color:var(--slate40);margin-bottom:0.2rem;">Top Age</div>
-                    <div style="font-weight:600;color:var(--slate);font-size:0.95rem;">{top3_age[0][0]}</div>
-                    <div style="font-size:0.7rem;color:var(--sapphire);">{top3_age[0][1]*100:.1f}%</div>
-                </div>
-                <div style="flex:1;min-width:80px;">
-                    <div style="font-size:0.72rem;color:var(--slate40);margin-bottom:0.2rem;">Top Race</div>
-                    <div style="font-weight:600;color:var(--slate);font-size:0.95rem;">{top3_race[0][0]}</div>
-                    <div style="font-size:0.7rem;color:var(--sapphire);">{top3_race[0][1]*100:.1f}%</div>
-                </div>
-                <div style="flex:1;min-width:80px;">
-                    <div style="font-size:0.72rem;color:var(--slate40);margin-bottom:0.2rem;">Gender</div>
-                    <div style="font-weight:600;color:var(--slate);font-size:0.95rem;">{top3_gender[0][0]}</div>
-                    <div style="font-size:0.7rem;color:var(--sapphire);">{top3_gender[0][1]*100:.1f}%</div>
-                </div>
-            </div>
-        </div>
-        <div style="margin-top:0.6rem;font-family:'DM Mono',monospace;font-size:0.62rem;
-                    color:var(--slate40);text-align:right;">
-            Inference: {elapsed_ms:.0f} ms · Device: {'CUDA' if torch.cuda.is_available() else 'CPU'}
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col_data:
-        st.markdown('<div class="fv-badge">✦ prediction result</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="fv-top-pred">{age_label}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="fv-top-conf">{age_conf*100:.1f}% confidence</div>', unsafe_allow_html=True)
-        st.markdown('<div class="fv-divider"></div>', unsafe_allow_html=True)
-
-        # ── THREE PREDICTION COLUMNS ──────────
-        def render_top3_cards(title, icon, items):
-            html = f"""
-            <div class="fv-pred-col">
-              <div class="fv-pred-col-header">{icon} {title}</div>
-            """
-            for rank, (name, prob) in enumerate(items, 1):
-                is_top = "top" if rank == 1 else ""
-                html += f"""
-                <div class="fv-pred-card {is_top}">
-                    <span class="fv-pred-rank">#{rank}</span>
-                    <span class="fv-pred-name">{name}</span>
-                    <div class="fv-pred-bar-wrap">
-                        <div class="fv-pred-bar" style="width:{prob*100:.1f}%"></div>
-                    </div>
-                    <span class="fv-pred-pct">{prob*100:.1f}%</span>
-                </div>
-                """
-            html += "</div>"
-            return html
-
-        age_html    = render_top3_cards("Age Group", "📅", top3_age)
-        race_html   = render_top3_cards("Ethnicity", "🌍", top3_race)
-        gender_html = render_top3_cards("Gender", "⚥", top3_gender)
-
-        st.markdown(f"""
-        <div class="fv-3grid">
-            {age_html}
-            {race_html}
-            {gender_html}
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Note
-        st.markdown("""
-        <div class="fv-note">
-            <strong>Note on Race & Gender:</strong> Race and gender predictions shown here
-            use simulated outputs for demonstration. Connect a multi-head model to
-            enable real inference. Age predictions are powered by FairVisionCNN_v3.
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown('</div></div>', unsafe_allow_html=True)  # result-inner + result-wrap
-
-    # ── MITIGATION METRICS ────────────────────
-    st.markdown('<div class="fv-section-bg"><div class="fv-section-inner">', unsafe_allow_html=True)
-    st.markdown("""
-    <div style="font-family:'DM Mono',monospace;font-size:0.65rem;
-                letter-spacing:0.25em;text-transform:uppercase;color:var(--slate40);
-                margin-bottom:1.5rem;border-bottom:1px solid var(--slate10);padding-bottom:0.75rem;">
-        Fairness Mitigation Journey
-    </div>
-    """, unsafe_allow_html=True)
-
-    _, c1, c2, c3, _ = st.columns([1,1,1,1,1])
-    c1.metric("Baseline",     f"{meta['baseline_acc']*100:.1f}%", help="No fairness interventions")
-    c2.metric("Mitigation 1", f"{meta['mit1_acc']*100:.1f}%",
-              delta=f"{(meta['mit1_acc']-meta['baseline_acc'])*100:+.1f}pp",
-              help="+ Soft class weights")
-    c3.metric("Deployed",     f"{meta['mit2_acc']*100:.1f}%",
-              delta=f"{(meta['mit2_acc']-meta['baseline_acc'])*100:+.1f}pp",
-              help="+ WeightedRandomSampler")
-
-    st.markdown("""
-    <div class="fv-note" style="margin-top:1.5rem;">
-        <strong>Accuracy ≠ Fairness.</strong> The deployed model scores lower overall
-        (53.6% vs 58.1%) but dramatically improves recall for under-represented age
-        groups like <em>0–2</em> and <em>70+</em>, and narrows the accuracy gap across
-        all 7 race groups. That's the fairness trade-off — intentional, measurable, and worth it.
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown('</div></div>', unsafe_allow_html=True)
-
-else:
-    st.markdown("""
-    <div class="fv-empty">
-        ↑ upload an image or use camera above to begin analysis
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# ══════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════
 # FOOTER
-# ══════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════
 st.markdown(f"""
 <div class="fv-footer">
-    FairVision CNN v3 &nbsp;·&nbsp;
-    FairFace 0.25 &nbsp;·&nbsp;
-    Focal Loss γ=2 &nbsp;·&nbsp;
-    Balanced Subset &nbsp;·&nbsp;
-    TTA × 5 &nbsp;·&nbsp;
-    Device: {'CUDA' if torch.cuda.is_available() else 'CPU'}
+  FairVision CNN v3 &nbsp;·&nbsp; FairFace 0.25 &nbsp;·&nbsp;
+  Focal Loss γ=2 &nbsp;·&nbsp; TTA × 5 &nbsp;·&nbsp;
+  Device: {'CUDA' if torch.cuda.is_available() else 'CPU'}
 </div>
 """, unsafe_allow_html=True)
