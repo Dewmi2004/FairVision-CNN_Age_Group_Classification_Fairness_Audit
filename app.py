@@ -2,6 +2,7 @@ import streamlit as st
 from PIL import Image
 import torch
 import torchvision.transforms as transforms
+import torchvision.models as models
 
 # ------------------ PAGE CONFIG ------------------
 st.set_page_config(
@@ -13,9 +14,6 @@ st.set_page_config(
 # ------------------ CUSTOM CSS ------------------
 st.markdown("""
 <style>
-.main {
-    background-color: #0E1117;
-}
 .title {
     text-align: center;
     font-size: 40px;
@@ -50,17 +48,25 @@ st.markdown('<div class="subtitle">Age Group Classification & Fairness Audit</di
 # ------------------ MODEL LOAD ------------------
 MODEL_PATH = "fairvision_deployed.pth"
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc = torch.nn.Linear(512, 3)
+@st.cache_resource
+def load_model():
+    try:
+        # 🔥 Try loading as FULL model
+        model = torch.load(MODEL_PATH, map_location="cpu")
+        model.eval()
+        return model
+    except:
+        # 🔥 If failed → assume state_dict with ResNet
+        model = models.resnet18(weights=None)
+        model.fc = torch.nn.Linear(model.fc.in_features, 3)
 
-    def forward(self, x):
-        return self.fc(x)
+        state_dict = torch.load(MODEL_PATH, map_location="cpu")
+        model.load_state_dict(state_dict)
 
-model = MyModel()
-model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
-model.eval()
+        model.eval()
+        return model
+
+model = load_model()
 
 # ------------------ IMAGE TRANSFORM ------------------
 transform = transforms.Compose([
@@ -70,15 +76,13 @@ transform = transforms.Compose([
 
 # ------------------ UPLOAD SECTION ------------------
 st.markdown('<div class="card">', unsafe_allow_html=True)
-
 uploaded_file = st.file_uploader("📤 Upload a face image", type=["jpg", "png", "jpeg"])
-
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ------------------ PREDICTION ------------------
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
-    
+
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.image(image, caption="Uploaded Image", use_column_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
