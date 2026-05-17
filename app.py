@@ -502,7 +502,12 @@ with col_r:
 
         # ── CROP ──────────────────────────────────
         st.markdown('<div class="fv-section-lbl" style="margin-top:1.2rem;">Crop (optional)</div>', unsafe_allow_html=True)
-        with st.expander("Adjust crop region", expanded=False):
+
+        # Use session state to track if crop is active
+        crop_expanded = st.expander("Adjust crop region", expanded=False)
+        image = pil  # default: no crop
+
+        with crop_expanded:
             c1, c2 = st.columns(2)
             with c1:
                 lp = st.slider("Left %",   0, 45,  5, key="cl")
@@ -516,37 +521,34 @@ with col_r:
 
             if l >= r or t >= b:
                 st.warning("Invalid crop — adjust sliders.")
-                st.stop()
-
-            image = pil.crop((l, t, r, b))
-            pc1, pc2 = st.columns(2)
-            with pc1:
-                st.caption("Original"); st.image(pil, use_container_width=True)
-            with pc2:
-                st.caption("Cropped ✓"); st.image(image, use_container_width=True)
-    else:
-            image = pil
+            else:
+                image = pil.crop((l, t, r, b))
+                pc1, pc2 = st.columns(2)
+                with pc1:
+                    st.caption("Original"); st.image(pil, use_container_width=True)
+                with pc2:
+                    st.caption("Cropped ✓"); st.image(image, use_container_width=True)
 
         # ── PHOTO ─────────────────────────────────
-    st.markdown('<div class="fv-section-lbl" style="margin-top:1.2rem;">Photo</div>', unsafe_allow_html=True)
-    st.image(image, use_container_width=True)
+        st.markdown('<div class="fv-section-lbl" style="margin-top:1.2rem;">Photo</div>', unsafe_allow_html=True)
+        st.image(image, use_container_width=True)
 
         # ── INFERENCE ─────────────────────────────
-    with st.spinner("Analysing…"):
+        with st.spinner("Analysing…"):
             t0 = time.time()
             pidx, age_probs = predict(model, image, meta, device)
             ms = (time.time() - t0) * 1000
 
-    age_label = meta["age_names"][pidx]
-    age_conf  = float(age_probs[pidx])
-    seed = int(np.sum(np.array(image.resize((16,16))).flatten()[:8]))
+        age_label = meta["age_names"][pidx]
+        age_conf  = float(age_probs[pidx])
+        seed = int(np.sum(np.array(image.resize((16,16))).flatten()[:8]))
 
-    t3_age    = top3(meta["age_names"], age_probs)
-    t3_race   = top3(RACES,   sim(RACES,   seed,   1.5))
-    t3_gender = top3(GENDERS, sim(GENDERS, seed+7, 5.0))
+        t3_age    = top3(meta["age_names"], age_probs)
+        t3_race   = top3(RACES,   sim(RACES,   seed,   1.5))
+        t3_gender = top3(GENDERS, sim(GENDERS, seed+7, 5.0))
 
         # ── SUMMARY ───────────────────────────────
-    st.markdown(f"""
+        st.markdown(f"""
         <div class="fv-section-lbl" style="margin-top:1.4rem;">Analysis result</div>
         <div class="fv-summary">
           <div>
@@ -561,7 +563,7 @@ with col_r:
         """, unsafe_allow_html=True)
 
         # ── TOP-3 CARDS ───────────────────────────
-    def col_html(title, items):
+        def col_html(title, items):
             rows = ""
             for rank, (name, prob) in enumerate(items, 1):
                 cls  = "top" if rank == 1 else ""
@@ -578,20 +580,22 @@ with col_r:
                 """
             return f'<div class="fv-pred-col"><div class="fv-pred-col-title">{title}</div>{rows}</div>'
 
-    st.markdown(f"""
+        st.markdown(f"""
         <div class="fv-pred-grid">
           {col_html("Age Group", t3_age)}
           {col_html("Ethnicity", t3_race)}
           {col_html("Gender",    t3_gender)}
         </div>
         """, unsafe_allow_html=True)
-else:
-st.markdown("""
+
+    else:
+        st.markdown("""
         <div class="fv-empty">
           ↑ Upload an image or use the camera to begin analysis
         </div>
         """, unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════
